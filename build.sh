@@ -1,0 +1,1 @@
+g++ proc/am/am_sim.cpp dec/pcm/pcmdec_sim.cpp sys/bitripper/bitripper_sim.cpp sys/wave/wavefile.cpp sys/odt/odt_modules.cpp sys/haos/haos_sim.cpp sys/haos/core.cpp sys/haos/main.cpp dec/mp3/player_win32.cpp dec/mp3/minimp3.cpp proc/fx/fx_mif.cpp proc/fx/fx.cpp proc/fx/filters.cpp -Iproc/fx/ -Idec/mp3/ -Iproc/am/ -Idec/pcm/ -Iutils -Isys/wave -Isys/odt -Isys/haos -Isys/bitripper
