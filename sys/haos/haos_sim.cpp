@@ -1,9 +1,4 @@
-/*
- * haos_sim.c
- *
- *  Created on: Apr 10, 2024
- *      Author: pekez
- */
+
 
 #include "haos.h"
 #include "bitripper_sim.h"
@@ -34,15 +29,10 @@ bool useMp3 = false;
 
 namespace HAOS
 {
-	// static memory allocation
-	static uint32_t sharedInputFIFO[MAX_CORES_COUNT][MAX_FIFO_CNT][MAX_FIFO_SIZE] = { 0 }; // FIFO0 buffer - read input samples
+	static uint32_t sharedInputFIFO[MAX_CORES_COUNT][MAX_FIFO_CNT][MAX_FIFO_SIZE] = { 0 };
 	static int32_t sharedIObuffer[MAX_CORES_COUNT][NUMBER_OF_IO_CHANNELS][IO_BUFFER_PER_CHAN_MODULO][BRICK_SIZE] = { 0 };
 
-	// @brief Global system context instance used by the HAOS runtime.
-	//
-	// This static instance holds the complete state of the audio processing system,
-	// including core configurations, stream management, I/O buffers, and runtime flags.
-	//
+	
 	static HAOS_System_t haOS;
 
 	static void parseCmdLine(int argc, const char* argv[]);
@@ -60,20 +50,7 @@ namespace HAOS
 	static void usage(const char* programName);
 	static std::string trim(std::string const& str);
 
-	//==============================================================================
-	//========================== EXTERNAL API FUNCTIONS ============================
-	//==============================================================================
 
-	// @brief Initializes the HAOS simulation environment using command-line arguments.
-	//
-	// This function sets up the global system state at the beginning of the simulation.
-	// It parses user-provided arguments (such as number of DSP cores and config file paths),
-	// and initializes the list of active core instances based on the requested concurrency.
-	//
-	// Should be called once at the beginning of main(), before calling add_modules().
-	//
-	// @param argc Number of command-line arguments.
-	// @param argv Array of command-line argument strings.
 	void init(int argc, const char* argv[])
 	{
 		std::cout << cyan;
@@ -87,25 +64,14 @@ namespace HAOS
 		std::cout << ">>Booting haOS" << std::endl;
 		std::cout << def;
 	
-		// Initialize global system structure with default values
 		initSystemStruct();
 
-		// Parse command-line options provided by the user (e.g., -input, -output, -cfg, -cores)
 		parseCmdLine(argc, argv);
 	}
 
-	// @brief Assigns module lists (ODT) to each active core in the system.
-	//
-	// Iterates through the global core table and assigns corresponding module lists
-	// from the provided array. Each module list is added to the matching core
-	// using the add_core_modules() function. Only non-null module lists are processed.
-	//
-	// @param moduleLists Array of pointers to ODT tables (one per core).
-	//                    Entries may be nullptr if no modules should be assigned to that core.
 	void addModules(void* moduleLists[])
 	{
 
-		/* Get number of cores from system ODT table */
 		haOS.coresNumber = 0;
 
 		for (int coreIndex = 0; coreIndex < MAX_CORES_COUNT; coreIndex++)
@@ -116,14 +82,11 @@ namespace HAOS
 			}
 		}
 
-		/* Create and initialize the list of DSP cores based on parsed configuration */
 		makeCoresList();
 
 
-		/* Iterate through cores and corresponding module lists */
 		for (int coreIndex = 0; coreIndex < MAX_CORES_COUNT; coreIndex++)
 		{
-			/* If a module list is provided for this core, assign it */
 			if (moduleLists[coreIndex] != nullptr)
 			{
 				addCoreModules(moduleLists[coreIndex], &haOS.coreTable[coreIndex]);
@@ -131,55 +94,34 @@ namespace HAOS
 		}
 	}
 
-	// @brief Starts the main simulation loop.
-	//
-	// Initializes core runtime variables and executes all registered module
-	// entry points in the expected order: PREKICK, POSTKICK, TIMER, FRAME, BRICK,
-	// and BACKGROUND. Reads optional configuration files and handles I/O buffers,
-	// output file writing, and channel mask updates.
-	//
-	// This function runs until the end of the input stream.
-	// Should be called after init() and add_modules().
+	
 	void run()
 	{
 		std::cout << yellow << ">>Running haOS" << def << std::endl;
 
-		// Initialize I/O buffers, internal pointers, and bitripper states for all cores
 		initCores();
 		
-		// Open output file for writing decoded/processed PCM frames
 		openInputFile();
 
-		// Execute pre-initialization entry points of all modules (e.g., set host MCV to default values)
 		callAllModules(PREKICK);
 
-		// The MCV is first set to default values; afterwards, readPrekickConfigs updates it with values from the configuration file.
-
-		// Load additional config from .cfg file (if provided) to override defaults
 		readPrekickConfigs();
 
-		// Execute post-initialization entry points of all modules
 		callAllModules(POSTKICK);
 
-		// Execute time-based initialization (e.g., initial delay, timing sync)
 		callAllModules(TIMER);
 
-		// Main loop: runs until end-of-file is detected in the input stream
 		while (haOS.flushDataCnt)
 		{
-			/* If EOF is detected, process two additional dummy frames to flush the remaining data from the system */
 			if (haOS.inStream.ctrlFlags & HAOS_STREAM_END_OF_FILE_FLAG)
 			{
 				haOS.flushDataCnt--;
 			}
 
-			// For each BRICK in the frame (depending on fg2bg ratio)
 			for (int brick = 0; brick < haOS.fg2bg_ratio; brick++)
 			{
-				// Execute any asynchronous frame-ahead processing (optional for some modules)
 				callAllModules(AFAP);
 
-				// Execute one frame if the frameTriggered flag is set
 				if (haOS.ctrlFlags & HAOS_FRAME_TRIGGERED_FLAG)
 				{
 					haOS.frameCounter++;
@@ -188,7 +130,6 @@ namespace HAOS
 					haOS.ctrlFlags &= HAOS_FRAME_TRIGGERED_CLR;
 				}
 
-				// Execute SMM if required
 
 				if (haOS.ctrlFlags & HAOS_SYS_MEM_ALLOC_REQUESTED_FLAG)
 				{
@@ -200,28 +141,22 @@ namespace HAOS
 				}
 
 
-				// Execute audio processing BRICK stage across all modules
 				callAllModules(BRICK);
 
 
-				//if (haosSystem.ctrlFlags & HAOS_DECODING_STARTED_FLAG)
 				if (haOS.coreTable[0].IOfree < IO_BUFFER_SIZE_PER_CHAN)
 				{
-					// Write current brick data to output stream/file
 					writeToFile();
 
 					//flushFrameToFile();
 
-					// Advance I/O buffer pointers to next brick location
 					updatePtrs();
 				}
 
 			}
 
-			// Execute background processing step for all modules
 			callAllModules(BACKGROUND);
 
-			// Flush buffered frame data to file so it’s visible during runtime
 			flushFrameToFile();
 
 		}
@@ -231,7 +166,6 @@ namespace HAOS
 		std::cout << ">>Shutting down haOS" << std::endl;
 		std::cout << def;
 	}
-	//==============================================================================
 
 
 	static void callAllModules(HAOS_ROUTINE entryPoint)
@@ -285,39 +219,25 @@ namespace HAOS
 			}
 		}
 	}
-	//==============================================================================
 
-	/**
- * @brief Initializes the list of cores used in the current concurrency context.
- *
- * This function populates the global haosSystem.coreTable with HAOS_Core_t instances,
- * one for each core (from 0 to haosSystem.coresNumber - 1). Each core entry is initialized
- * with its corresponding coreID and an empty module list.
- */
 	static void makeCoresList()
 	{
 		memset(haOS.coreTable, 0, sizeof(HAOS_CoreTable_t));
 
-		// Loop through the number of active cores defined in haosSystem.coresNumber
 		for (int idx = 0; idx < haOS.coresNumber; idx++)
 		{
-			// Create a new core instance and assign its ID
 			HAOS_Core_t* pCore = &haOS.coreTable[idx];
 
 			haOS.pActiveCore = pCore;
 
 			pCore->coreID = idx;
 
-			// Clear the module list (initially empty)
 			memset(pCore->moduleMIFs, 0, sizeof(HAOS_ModuleTable_t));
 			pCore->modulesCnt = 0;
 
-			// Assign the shared static I/O buffer to current core
-			// All cores point to the same global I/O buffer
+		
 			pCore->IOBUFFER = (HAOS_BrickBuffer_t(*)[IO_BUFFER_PER_CHAN_MODULO]) sharedIObuffer[0];
 
-			// Assign the input FIFO buffer only to core 0; others receive nullptr
-			//static_cast<bitripper::BitRipperState_t*>(core.bitRipper)->inputFIFO = (idx == 0) ? inputFIFO : nullptr;
 			for (int fifo = 0; fifo < MAX_FIFO_CNT; fifo++)
 			{
 				uint32_t size = 0;
@@ -340,102 +260,62 @@ namespace HAOS
 
 	}
 
-	/**
-	 * @brief Adds modules from a raw ODT (Overlay Definition Table) to the specified core.
-	 *
-	 * This function takes a void pointer to an ODT table, interprets it as an array of
-	 * HAOS_OdtEntry_t structures, and appends each valid module entry to the core's
-	 * moduleMIFs array. The table is terminated by a null MIF pointer.
-	 *
-	 * @param moduleList Pointer to an array of HAOS_OdtEntry_t entries (ODT table).
-	 * @param pCore Pointer to the HAOS_Core_t structure representing the target core.
-	 */
+	
 	static void addCoreModules(void* moduleList, pHAOS_Core_t pCore)
 	{
-		// Proceed only if the module list is provided
 		if (moduleList != nullptr)
 		{
-			// Cast the generic pointer to a typed ODT entry pointer
 			pHAOS_OdtEntry_t pOdt = (pHAOS_OdtEntry_t)moduleList;
 			while (pOdt != NULL)
 			{
-				// A valid entry has a non-null MIF pointer
 				if (pOdt->MIF != nullptr)
 				{
-					// Add the module entry to the core's list of modules
 					memcpy(&pCore->moduleMIFs[pCore->modulesCnt++], pOdt, sizeof(HAOS_OdtEntry_t));
 				}
 				else
 				{
-					// Stop processing when a null MIF marks the end of the table
 					break;
 				}
 				pOdt++;
 			}
 		}
 	}
-	//==============================================================================
-
-
-	// @brief Initializes all DSP cores in the haOS system.
-	//
-	// This function performs one-time setup for each core defined in haosSystem.coreTable.
-	// It clears I/O buffer memory, initializes input/output buffer pointers for each channel,
-	// sets the available free-space counter (IOfree), applies the default post-processing
-	// channel mask (HAOS_PPM_VALID_CHANNELS), and initializes the BitRipper state.
-	//
-	// Should be called once during system initialization, before any processing begins.
-	//
-	// @note Assumes that haosSystem.coreTable has already been populated.
-
+	
 	static void initCores()
 	{
-		// Loop through all cores defined in the haOS system
 		for (int coreIdx = 0; coreIdx < haOS.coresNumber; coreIdx++)
 		{
 			pHAOS_Core_t pCore = &haOS.coreTable[coreIdx];
 
 			haOS.pActiveCore = pCore;
 
-			// Get raw pointer to the beginning of the I/O buffer for this core
 			HAOS_PcmSamplePtr_t ioBufferPtr = (HAOS_PcmSamplePtr_t)pCore->IOBUFFER;
 
-			// Size of one channel's I/O buffer (all its bricks)
 			int32_t chChunkSize = IO_BUFFER_PER_CHAN_MODULO * sizeof(HAOS_BrickBuffer_t);
 
-			// Set initial free-space value per channel (in samples)
 			pCore->IOfree = IO_BUFFER_SIZE_PER_CHAN;
 
-			// Initialize I/O pointers for each channel
 			for (int i = 0; i < NUMBER_OF_IO_CHANNELS; ++i)
 			{
-				// Clear buffer memory for this channel
 				memset(ioBufferPtr, 0, chChunkSize);
 
-				// Set IO pointers to the start of the channel's buffer
 				pCore->HAOS_IOBUFFER_INP_PTRS[i] = ioBufferPtr;
 				pCore->HAOS_IOBUFFER_PTRS[i] = ioBufferPtr;
 
-				// Move to the next channel's buffer location
 				ioBufferPtr += IO_BUFFER_PER_CHAN_MODULO * BRICK_SIZE;
 			}
 
-			// Set the default valid channel mask for post-processing
 			pCore->HAOS_PPM_VALID_CHANNELS = DEFAULT_PPM_CHANNEL_MASK;
 
-			// init FIFO and open input file
-
-			/* This is for kickstart - for first switchInputFIFO() call after Init to work properly */
 			Core::initBitripper(0);
 		}
 	}
-	//==============================================================================
 
 	HAOS_PcmSamplePtr_t* getIOChannelPointerTable()
 	{
 		return haOS.pActiveCore->HAOS_IOBUFFER_PTRS;
 	}
-	//==============================================================================
+	
 
 	void setInputStreamEOF(bool value)
 	{
@@ -445,37 +325,35 @@ namespace HAOS
 			haOS.inStream.ctrlFlags |= HAOS_STREAM_END_OF_FILE_FLAG;
 		}
 	}
-	//==============================================================================
+	
 
 	bool getInputStreamEOF()
 	{
 		return (haOS.inStream.ctrlFlags & HAOS_STREAM_END_OF_FILE_FLAG);
 	}
-	//==============================================================================
+	
 
 	bool getEndOfProcessing()
 	{
 		return (getInputStreamFS() && !haOS.flushDataCnt);
 	}
-	//==============================================================================
 
 	int32_t getInputStreamFS()
 	{
 		return haOS.inStream.samplingFrequency;
 	}
-	//==============================================================================
+	
 
 	int32_t getInputStreamChCnt()
 	{
 		return haOS.inStream.channelCount;
 	}
-	//==============================================================================
+	
 
 	HAOS_ChannelMask_t getValidChannelMask()
 	{
 		return haOS.pActiveCore->HAOS_PPM_VALID_CHANNELS;
 	}
-	//==============================================================================
 
 	bool isActiveChannel(int32_t chIdx)
 	{
@@ -485,25 +363,25 @@ namespace HAOS
 
 		return retValue;
 	}
-	//==============================================================================
+	
 
 	void setValidChannelMask(HAOS_ChannelMask_t newMask)
 	{
 		haOS.pActiveCore->HAOS_PPM_VALID_CHANNELS = newMask;
 	}
-	//==============================================================================
+	
 
 	void* getActiveCore()
 	{
 		return (void*)haOS.pActiveCore;
 	}
-	//==============================================================================
+	
 
 	void* getActiveCoreBitRipper()
 	{
 		return (void*)haOS.pActiveCore->pBitRipper;
 	}
-	//==============================================================================
+	
 
 	void setCompressedInputStream(bool value)
 	{
@@ -513,13 +391,12 @@ namespace HAOS
 			haOS.inStream.ctrlFlags |= HAOS_STREAM_COMMPRESSED_FLAG;
 		}
 	}
-	//==============================================================================
 
 	bool getCompressedInputStream()
 	{
 		return (haOS.inStream.ctrlFlags & HAOS_STREAM_COMMPRESSED_FLAG);
 	}
-	//==============================================================================
+	
 
 	void requestMemoryAllocation(bool clearFirstFrameReceived)
 	{
@@ -530,26 +407,13 @@ namespace HAOS
 		}
 
 	}
-	//==============================================================================
+	
 
 	uint32_t getFrameCounter()
 	{
 		return haOS.frameCounter;
 	}
-	//==============================================================================
-
-	//==============================================================================
-	//======================= INTERNAL LIBRARY FUNCTIONS ===========================
-	//==============================================================================
-	// 
-	// Initializes the main HAOS system structure with default values.
-	//
-	// This function sets up internal HAOS system fields prior to simulation.
-	// It defines the number of DSP cores, configures shared I/O and FIFO buffers,
-	// and resets various counters and flags to their initial state.
-	//
-	// This should be called before any processing or module loading begins.
-
+	
 	static void initSystemStruct()
 	{
 		// Set the number of DSP cores for the current concurrency mode
@@ -1112,17 +976,7 @@ namespace HAOS
 			haOS.pActiveCore->HAOS_IOBUFFER_INP_PTRS[i] = haOS.pActiveCore->IOBUFFER[i][haOS.writeBrickCnt];
 		}
 	}
-	//==============================================================================
-
-	/*
-	 * Fills the BitRipper input FIFO with new samples from the input stream.
-	 *
-	 * This function handles the initialization and reading of the input stream from a WAV file.
-	 * If the file is not yet opened, it performs the initial setup and validates the input.
-	 * It then fills the BitRipper FIFO buffer with decoded samples until either the buffer is
-	 * full or the end-of-file (EOF) is reached. In the case of EOF, it fills the remaining
-	 * FIFO space with zeros to avoid processing garbage data.
-	 */
+	
 	void fillInputFIFO()
 	{
 		/* Check if input file path is set */
