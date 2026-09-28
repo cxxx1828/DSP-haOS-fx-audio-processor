@@ -1,11 +1,4 @@
-/**
- * @file
- * @brief DSP OS support.
- *
- * Home Audio System Kernel V0.0.1
- *
- *
- */
+
 #ifndef HAOS_H__
 #define HAOS_H__
 
@@ -15,33 +8,29 @@
 #include "haos_api.h"
 #include "haos_config.h"
 
- /* Number of bits per sample */
 #define OUTPUT_HANDLER_BITS_PER_SAMPLE_DFLT     16
 
-/* Number of dummy frames to process after EOF is detected in the input stream */
 #define HAOS_FLUSH_FRAMES_CNT_DFLT     10
 
 
-// Bitmask definitions for control flags used in the system.
-#define HAOS_STREAM_FIRST_OPEN_FLAG			BIT_00_SET			// Indicates whether the input file is being opened for the first time
+#define HAOS_STREAM_FIRST_OPEN_FLAG			BIT_00_SET			
 #define HAOS_STREAM_FIRST_OPEN_CLR			BIT_00_CLR
-#define HAOS_STREAM_END_OF_FILE_FLAG		BIT_01_SET			// Indicates whether the end of the stream has been reached
+#define HAOS_STREAM_END_OF_FILE_FLAG		BIT_01_SET			
 #define HAOS_STREAM_END_OF_FILE_CLR			BIT_01_CLR
-#define HAOS_STREAM_COMMPRESSED_FLAG		BIT_02_SET			// Indicates whether the stream is compressed bitStream
+#define HAOS_STREAM_COMMPRESSED_FLAG		BIT_02_SET			
 #define HAOS_STREAM_COMMPRESSED_CLR			BIT_02_CLR
-#define HAOS_STREAM_ROUNDING_FLAG			BIT_03_SET			// Indicates whether the PCM samples should be rounded
+#define HAOS_STREAM_ROUNDING_FLAG			BIT_03_SET			
 #define HAOS_STREAM_ROUNDING_CLR			BIT_03_CLR
 
 
 
-// Bitmask definitions for control flags used in the system.
 #define HAOS_CLEAR_ALL_FLAGS				ALL_BITS_CLR
-#define HAOS_SYS_MEM_ALLOC_REQUESTED_FLAG	BIT_00_SET	// Indicates a memory allocation request
-#define HAOS_SYS_MEM_ALLOC_REQUESTED_CLR	BIT_00_CLR	// Clears the memory allocation request flag
-#define HAOS_FRAME_TRIGGERED_FLAG			BIT_01_SET	// Indicates that a new frame has been triggered
-#define HAOS_FRAME_TRIGGERED_CLR			BIT_01_CLR	// Clears the frame triggered flag
-#define HAOS_DECODING_STARTED_FLAG			BIT_02_SET	// Indicates that the first frame has been received
-#define HAOS_DECODING_STARTED_CLR			BIT_02_CLR	// Clears the first frame received flag
+#define HAOS_SYS_MEM_ALLOC_REQUESTED_FLAG	BIT_00_SET	
+#define HAOS_SYS_MEM_ALLOC_REQUESTED_CLR	BIT_00_CLR	
+#define HAOS_FRAME_TRIGGERED_FLAG			BIT_01_SET	
+#define HAOS_FRAME_TRIGGERED_CLR			BIT_01_CLR	
+#define HAOS_DECODING_STARTED_FLAG			BIT_02_SET	
+#define HAOS_DECODING_STARTED_CLR			BIT_02_CLR	
 
 enum HAOS_ROUTINE
 {
@@ -56,14 +45,7 @@ enum HAOS_ROUTINE
 	PREMALLOC
 };
 
-// Represents a single entry in the Overlay Definition Table (ODT).
-//
-// Each ODT entry describes one audio processing module assigned to a core.
-// It includes a pointer to the module's Module Interface Structure (MIF),
-// and the module's unique identifier.
-//
-// These entries are used during system initialization to build the per-core
-// module execution lists (pipelines).
+
 typedef struct
 {
 	HAOS_Mif_t* MIF;
@@ -71,26 +53,13 @@ typedef struct
 } HAOS_OdtEntry_t, * pHAOS_OdtEntry_t;
 
 
-//  Defines a type alias for an array of ODT (Overlay Definition Table) entries.
-//
-// This represents a complete ODT table for one core, listing all modules assigned to it.
-// Each element in the array is a `HAOS_OdtEntry_t` structure, which contains a pointer
-// to a module's interface and its unique identifier.
-//
-// The array should be terminated with a special null entry (e.g., {nullptr, 0}) to mark the end.
+
 typedef HAOS_OdtEntry_t HAOS_Odt_t[];
 
 
-// type used to represent a sequence of incoming host comm messages
 typedef HAOS_OdtEntry_t HAOS_ModuleTable_t[MAX_MODULES_COUNT];
 
 
-/**
- * @brief Structure representing a single processing core in the HAOS system.
- *
- * This structure encapsulates all per-core data, including core identification,
- * module ODT, and audio I/O buffer management.
- */
 typedef struct
 {
 	// Unique identifier for this core
